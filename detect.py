@@ -29,9 +29,11 @@ import os
 import platform
 import sys
 from pathlib import Path
+import math
 
 import torch
 import torch.backends.cudnn as cudnn
+from collections import deque
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
@@ -46,6 +48,15 @@ from utils.general import (LOGGER, check_file, check_img_size, check_imshow, che
 from utils.plots import Annotator, colors, save_one_box
 from utils.torch_utils import select_device, time_sync
 
+def find_distance(theta1,theta2,dis1,dis2):
+    #distance calculation
+    x = dis2-dis1
+    t1 = math.tan(theta1)
+    t2 = math.tan(theta2)
+    dis = x*t1*t2/(t2-t1)
+    return dis
+    
+        
 
 @torch.no_grad()
 def run(
@@ -57,7 +68,7 @@ def run(
         iou_thres=0.45,  # NMS IOU threshold
         max_det=1000,  # maximum detections per image
         device='',  # cuda device, i.e. 0 or 0,1,2,3 or cpu
-        view_img=False,  # show results
+        view_img=True,  # show results
         save_txt=False,  # save results to *.txt
         save_conf=False,  # save confidences in --save-txt labels
         save_crop=False,  # save cropped prediction boxes
@@ -76,6 +87,16 @@ def run(
         half=False,  # use FP16 half-precision inference
         dnn=False,  # use OpenCV DNN for ONNX inference
 ):
+    #List to store results
+    ind_image_objects = list()
+    q = deque()
+    first_frame = True
+    distance_left_prev = 0
+    distance_right_prev = 0
+
+
+
+    #Initialization of camera/input file
     source = str(source)
     save_img = not nosave and not source.endswith('.txt')  # save inference images
     is_file = Path(source).suffix[1:] in (IMG_FORMATS + VID_FORMATS)
@@ -149,7 +170,6 @@ def run(
             imc = im0.copy() if save_crop else im0  # for save_crop
             annotator = Annotator(im0, line_width=line_thickness, example=str(names))
             if len(det):
-                print('len found')
                 # Rescale boxes from img_size to im0 size
                 det[:, :4] = scale_coords(im.shape[2:], det[:, :4], im0.shape).round()
 
@@ -166,11 +186,20 @@ def run(
                         angle_r = -(xywh[0] + xywh[2] - 0.5)*FOV
                         xywh.append(angle_l)
                         xywh.append(angle_r)
-                        print(type(xywh[0]))
+                        if first_frame == True:
+                            first_frame = False
+                            xywh.append(distance_left_prev)
+                            xywh.append(distance_right_prev)
+                        else:
+                            distance_r = q[0]
+                            print(distance_r)
                         line = (cls, *xywh, conf) if save_conf else (cls, *xywh)  # label format
                         
-                        with open(f'{txt_path}.txt', 'a') as f:
-                            f.write(('%g ' * len(line)).rstrip() % line + '\n')
+                        #Add it to a queue
+                        ind_image_objects.append(line)
+                        
+                        #with open(f'{txt_path}.txt', 'a') as f:
+                            #f.write(('%g ' * len(line)).rstrip() % line + '\n')
 
                     if save_img or save_crop or view_img:  # Add bbox to image
                         c = int(cls)  # integer class
@@ -178,10 +207,17 @@ def run(
                         annotator.box_label(xyxy, label, color=colors(c, True))
                     if save_crop:
                         save_one_box(xyxy, imc, file=save_dir / 'crops' / names[c] / f'{p.stem}.jpg', BGR=True)
-
+                if len(q)<2:
+                    q.append(ind_image_objects)
+                else:
+                    q.popleft()
+                    q.append(ind_image_objects)
+                print(q)
+                ind_image_objects = []  
+            
             # Stream results
             im0 = annotator.result()
-            view_img = False
+            #view_img = False
             if view_img:
                 if platform.system() == 'Linux' and p not in windows:
                     windows.append(p)
@@ -191,6 +227,7 @@ def run(
                 cv2.waitKey(1)  # 1 millisecond
 
             # Save results (image with detections)
+            #save_img = False
             if save_img:
                 if dataset.mode == 'image':
                     cv2.imwrite(save_path, im0)
