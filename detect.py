@@ -35,6 +35,11 @@ import torch
 import torch.backends.cudnn as cudnn
 from collections import deque
 
+#Libraries for serial data input
+from serial import Serial
+import pynmea2
+
+
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
 if str(ROOT) not in sys.path:
@@ -47,16 +52,45 @@ from utils.general import (LOGGER, check_file, check_img_size, check_imshow, che
                            increment_path, non_max_suppression, print_args, scale_coords, strip_optimizer, xyxy2xywh)
 from utils.plots import Annotator, colors, save_one_box
 from utils.torch_utils import select_device, time_sync
+import geopy.distance
 
-def find_distance(theta1,theta2,dis1,dis2):
+def find_displacement(coord_1,coord_2):
     #distance calculation
-    x = dis2-dis1
-    t1 = math.tan(theta1)
-    t2 = math.tan(theta2)
-    dis = x*t1*t2/(t2-t1)
+    dis = geopy.distance.geodesic(coord_1,coord_2).m
     return dis
     
         
+def find_perpendicular_distance(dis,theta1,theta2):
+    pi = math.pi
+    try:
+        per_dis = dis*math.tan(theta1*pi/180)*math.tan(theta2*pi/180)/(math.tan(theta2*pi/180) -math.tan(theta1*pi/180))
+    except:
+        return 0
+    return per_dis
+def find_latlong(start):
+    try:
+        stream = Serial('/dev/ttyACM0',9600,timeout = 3000)        
+    except:
+        print('Error in getting GPS data')
+        return (0,0)
+    if start:
+        count = 0
+        print('Establishing RTK GPS.....')
+        while True:
+            line = stream.readline()
+            line = str(line,encoding= 'utf-8')
+            count += 1
+            if count == 20:
+                return
+    while True:
+        line = stream.readline()
+        line = str(line,encoding= 'utf-8')
+        #print(line)
+        if line.startswith('$GNGGA'):
+            rmc = pynmea2.parse(line)
+            stream.close()
+            break
+    return (rmc.latitude,rmc.longitude)
 
 @torch.no_grad()
 def run(
@@ -94,7 +128,10 @@ def run(
     distance_left_prev = 0
     distance_right_prev = 0
 
+    #Serial port and uses
+    find_latlong(True)
 
+    
 
     #Initialization of camera/input file
     source = str(source)
@@ -181,25 +218,40 @@ def run(
                 for *xyxy, conf, cls in reversed(det):
                     if save_txt:  # Write to file
                         xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
-                        FOV = 62
-                        angle_l = -(xywh[0] - 0.5)*FOV 
-                        angle_r = -(xywh[0] + xywh[2] - 0.5)*FOV
+                        FOV = 110
+                        angle_l = (xywh[0] - 0.5)*FOV 
+                        angle_r = (xywh[0] + xywh[2] - 0.5)*FOV
                         xywh.append(angle_l)
                         xywh.append(angle_r)
+                        displacement = 0
                         if first_frame == True:
                             first_frame = False
                             xywh.append(distance_left_prev)
                             xywh.append(distance_right_prev)
+                            lat_long=find_latlong(False)
+                            xywh.append(lat_long)
                         else:
-                            distance_r = q[0]
-                            print(distance_r)
-                        line = (cls, *xywh, conf) if save_conf else (cls, *xywh)  # label format
-                        
+                            angle_l_prev,angle_r_prev = q[0][0][4],q[0][0][5]
+                            lat_long1 = q[0][0][9]
+                            lat_long2 = find_latlong(False)
+                            displacement = find_displacement(lat_long1,lat_long2)
+                            distance_left_prev = find_perpendicular_distance(displacement,angle_l_prev,angle_l)
+                            distance_left_right = find_perpendicular_distance(displacement,angle_r_prev,angle_r)
+                            xywh.append(distance_left_prev)
+                            xywh.append(distance_right_prev)
+                            xywh.append(lat_long2)
+                        #print(distance_right_prev,distance_left_prev)
+                        xywh_trimmed = xywh.copy()
+                        xywh_trimmed.append(displacement)
+                        del xywh_trimmed[8]
+                        #print(xywh,xywh_trimmed)
+                        line = (cls, *xywh_trimmed, conf) if save_conf else (cls, *xywh_trimmed)  # label format
+                        line_q = (cls, *xywh, conf) if save_conf else (cls, *xywh)
                         #Add it to a queue
-                        ind_image_objects.append(line)
+                        ind_image_objects.append(line_q)
                         
-                        #with open(f'{txt_path}.txt', 'a') as f:
-                            #f.write(('%g ' * len(line)).rstrip() % line + '\n')
+                        with open(f'{txt_path}.txt', 'a') as f:
+                            f.write(('%g ' * len(line)).rstrip() % line + '\n')
 
                     if save_img or save_crop or view_img:  # Add bbox to image
                         c = int(cls)  # integer class
@@ -212,12 +264,12 @@ def run(
                 else:
                     q.popleft()
                     q.append(ind_image_objects)
-                print(q)
-                ind_image_objects = []  
+                #print(q)
+                 
             
             # Stream results
             im0 = annotator.result()
-            #view_img = False
+            view_img = False
             if view_img:
                 if platform.system() == 'Linux' and p not in windows:
                     windows.append(p)
