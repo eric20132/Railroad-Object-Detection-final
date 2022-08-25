@@ -254,6 +254,20 @@ We are super excited about our first-ever Ultralytics YOLOv5 🚀 EXPORT Competi
 
 </details>
 
+## <div align="center">YOLO5 for rail road object detection</div>
+<details open>
+<summary>RTK GPS software</summary>
+
+Navigate to the folder containing RTK GPS software and run the 
+
+```bash
+git clone https://github.com/ultralytics/yolov5  # clone
+cd yolov5
+pip install -r requirements.txt  # install
+```
+
+</details>
+
 ## <div align="center">Contribute</div>
 
 We love your input! We want to make contributing to YOLOv5 as easy and transparent as possible. Please see our [Contributing Guide](CONTRIBUTING.md) to get started, and fill out the [YOLOv5 Survey](https://ultralytics.com/survey?utm_source=github&utm_medium=social&utm_campaign=Survey) to send us feedback on your experiences. Thank you to all our contributors!
