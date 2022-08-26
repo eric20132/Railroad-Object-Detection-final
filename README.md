@@ -258,14 +258,22 @@ We are super excited about our first-ever Ultralytics YOLOv5 🚀 EXPORT Competi
 <details open>
 <summary>RTK GPS software</summary>
 
-Navigate to the folder containing RTK GPS software and run the 
+Navigate to the folder containing RTK GPS software. Run the following commands after connecting the RTK GPS reciever with Jetson Nano.
 
 ```bash
-git clone https://github.com/ultralytics/yolov5  # clone
-cd yolov5
-pip install -r requirements.txt  # install
+make
+./startntripclient.sh
 ```
+</details>
 
+<details open>
+<summary>Object detection, localization and distance measurement</summary>
+The Yolonet is trained on Coco dataset. detect.py in the repository that detects the distance of an object from the center line of the camera. The following commands can be used to execute the object identification, localization and distance measurement module.
+
+
+```bash
+./detect.py --source 0 --save-txt
+```
 </details>
 
 ## <div align="center">Contribute</div>
