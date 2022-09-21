@@ -1,4 +1,4 @@
-# YOLOv5 🚀 by Ultralytics, GPL-3.0 license
+
 """
 Run inference on images, videos, directories, streams, etc.
 
@@ -68,6 +68,7 @@ def find_perpendicular_distance(dis,theta1,theta2):
         return 0
     return per_dis
 def find_latlong(start):
+    return (0,0)
     try:
         stream = Serial('/dev/ttyACM0',9600,timeout = 3000)        
     except:
@@ -91,6 +92,24 @@ def find_latlong(start):
             stream.close()
             break
     return (rmc.latitude,rmc.longitude)
+    
+def detect_angle(FOV,xywh,gain):
+    
+    focal_length = gain[0]/(math.tan(math.radians(FOV/2))*2)
+    #print(gain[0],math.tan(math.radians(FOV/2)))
+    #print(gain[0]/math.tan(math.radians(FOV/2)))
+    x_l = xywh[0] * gain[0]
+    x_r = (xywh[0] + xywh[2]) *gain[0]
+    print('raw values',x_l,x_r,xywh[0],xywh[2])
+    distance_l = abs(x_l - gain[0]*0.5)
+    angle_l = math.degrees(math.atan(distance_l/focal_length))
+    
+    distance_r = abs(x_r - gain[0]*0.5)
+    angle_r = math.degrees(math.atan(distance_r/focal_length))
+    print ('processed values',angle_l,angle_r,distance_l,distance_r)
+    return (math.radians(angle_l),math.radians(angle_r))
+    
+    
 
 @torch.no_grad()
 def run(
@@ -204,6 +223,7 @@ def run(
             txt_path = str(save_dir / 'labels' / p.stem) + ('' if dataset.mode == 'image' else f'_{frame}')  # im.txt
             s += '%gx%g ' % im.shape[2:]  # print string
             gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
+            h,w,z = im0.shape
             imc = im0.copy() if save_crop else im0  # for save_crop
             annotator = Annotator(im0, line_width=line_thickness, example=str(names))
             if len(det):
@@ -219,33 +239,32 @@ def run(
                     if save_txt:  # Write to file
                         xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
                         FOV = 110
-                        angle_l = (xywh[0] - 0.5)*FOV 
-                        angle_r = (xywh[0] + xywh[2] - 0.5)*FOV
+                        angle_l,angle_r = detect_angle(FOV,xywh,gn)
                         xywh.append(angle_l)
                         xywh.append(angle_r)
                         displacement = 0
-                        if first_frame == True:
-                            first_frame = False
-                            xywh.append(distance_left_prev)
-                            xywh.append(distance_right_prev)
-                            lat_long=find_latlong(False)
-                            xywh.append(lat_long)
-                        else:
-                            angle_l_prev,angle_r_prev = q[0][0][4],q[0][0][5]
-                            lat_long1 = q[0][0][9]
-                            lat_long2 = find_latlong(False)
-                            displacement = find_displacement(lat_long1,lat_long2)
-                            distance_left_prev = find_perpendicular_distance(displacement,angle_l_prev,angle_l)
-                            distance_left_right = find_perpendicular_distance(displacement,angle_r_prev,angle_r)
-                            xywh.append(distance_left_prev)
-                            xywh.append(distance_right_prev)
-                            xywh.append(lat_long2)
+                        #if first_frame == True:
+                        #    first_frame = False
+                        #    xywh.append(distance_left_prev)
+                        #    xywh.append(distance_right_prev)
+                        #    lat_long=find_latlong(False)
+                        #    xywh.append(lat_long)
+                        #else:
+                        #    angle_l_prev,angle_r_prev = q[0][0][4],q[0][0][5]
+                        #    lat_long1 = q[0][0][9]
+                        #    lat_long2 = find_latlong(False)
+                        #    displacement = find_displacement(lat_long1,lat_long2)
+                        #    distance_left_prev = find_perpendicular_distance(displacement,angle_l_prev,angle_l)
+                        #    distance_left_right = find_perpendicular_distance(displacement,angle_r_prev,angle_r)
+                        #    xywh.append(distance_left_prev)
+                        #    xywh.append(distance_right_prev)
+                        #    xywh.append(lat_long2)
                         #print(distance_right_prev,distance_left_prev)
-                        xywh_trimmed = xywh.copy()
-                        xywh_trimmed.append(displacement)
-                        del xywh_trimmed[8]
+                        #xywh_trimmed = xywh.copy()
+                        #xywh_trimmed.append(displacement)
+                        #del xywh_trimmed[8]
                         #print(xywh,xywh_trimmed)
-                        line = (cls, *xywh_trimmed, conf) if save_conf else (cls, *xywh_trimmed)  # label format
+                        line = (cls, *xywh, conf) if save_conf else (cls, *xywh)  # label format
                         line_q = (cls, *xywh, conf) if save_conf else (cls, *xywh)
                         #Add it to a queue
                         ind_image_objects.append(line_q)
@@ -269,7 +288,7 @@ def run(
             
             # Stream results
             im0 = annotator.result()
-            view_img = False
+            #view_img = False
             if view_img:
                 if platform.system() == 'Linux' and p not in windows:
                     windows.append(p)
